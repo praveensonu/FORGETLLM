@@ -9,7 +9,7 @@ conda activate forgetllm
 
 and then install all the required libraries
 ```
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 
 To run the ui

@@ -34,7 +34,6 @@ class Config:
     # ────────── data paths (injected by UI uploads) ──────────
     forget_path: str | None = None      # mandatory for gradient_ascent
     retain_path: str | None = None    # e.g. for DPO/NPO
-    test_path: str | None = None         # optional eval set
 
     # ────────── output ──────────
     save_dir: str = field(init=False)   # set in __post_init__

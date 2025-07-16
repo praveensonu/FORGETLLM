@@ -1,18 +1,16 @@
 import gradio as gr, tempfile
 import shutil, tempfile, os
 from gradio.components import File as GradioFile
-from config import Config
+from helpers.config import Config
+from gradient_ascent.grad_ascent import run_gradient_ascent
+from gradient_diff.grad_diff import run_grad_diff
 
-# ⬇ import *every* run_* function you implement
-from gradient_ascent import run_gradient_ascent
-# from dpo import run_dpo
-# from npo import run_npo
 
 # Map dropdown label ➜ callable
 METHOD_REGISTRY = {
     "gradient_ascent": run_gradient_ascent,
-    # "dpo":             run_dpo,
-    # "npo":             run_npo,
+    "gradient_diff": run_grad_diff,
+
 }
 
 def tmp_copy(upload: "GradioFile | str | bytes | None") -> str | None:
@@ -26,32 +24,38 @@ def tmp_copy(upload: "GradioFile | str | bytes | None") -> str | None:
     if upload is None:
         return None
 
-    # A. already a path-string
     if isinstance(upload, str):
         return upload
 
-    # B. NamedString ➜ copy the source file
-    if hasattr(upload, "name"):            # gradio.data_classes.NamedString
-        src_path = upload.name             # underlying temp file
+
+    if hasattr(upload, "name"):           
+        src_path = upload.name             
         dst_path = tempfile.mkstemp(prefix="upl_")[1]
         shutil.copy(src_path, dst_path)
         return dst_path
 
-    # C. raw bytes
     if isinstance(upload, (bytes, bytearray)):
         dst_path = tempfile.mkstemp(prefix="upl_")[1]
         with open(dst_path, "wb") as f:
             f.write(upload)
         return dst_path
-
-    # Fallback – shouldn’t happen
+    
     raise TypeError(f"Unsupported upload object: {type(upload)}")
+
 def train_interface(method,
-                    access_token, model_id,
-                    lora_r, lora_alpha, lora_dropout,
-                    learning_rate, batch_size,
-                    grad_acc_steps, num_epochs, weight_decay,
-                    forget_csv, retain_csv, test_csv, gpu_ids):
+                    access_token, 
+                    model_id,
+                    lora_r, 
+                    lora_alpha, 
+                    lora_dropout,
+                    learning_rate, 
+                    batch_size,
+                    grad_acc_steps, 
+                    num_epochs, 
+                    weight_decay,
+                    forget_csv, 
+                    retain_csv, 
+                    gpu_ids):
 
     cfg = Config()
 
@@ -69,39 +73,43 @@ def train_interface(method,
     cfg.weight_decay               = float(weight_decay)
     cfg.gpu_ids                    = gpu_ids.strip()
 
-    import os
     if cfg.gpu_ids:
         os.environ["CUDA_VISIBLE_DEVICES"] = cfg.gpu_ids
 
     # ---- uploaded data -------------------------------------
     cfg.forget_path   = tmp_copy(forget_csv)
-    cfg.remember_path = tmp_copy(retain_csv)
-    cfg.dev_path      = tmp_copy(test_csv)
+    cfg.retain_path = tmp_copy(retain_csv)
 
-    cfg.save_dir = f"./outputs/{cfg.loss_type}_model"
+    cfg.save_dir = cfg.save_dir
 
+    # --- Minimal Validation -------------------------------
+    if cfg.forget_path is None:
+        return "Please upload a Forget CSV first!"
+    
+    if method in ('gradient_diff') and cfg.retain_path is None:
+        return "This method requires a Retain file, please upload it."
+    
     # ---- dispatch to the chosen method ---------------------
-    try:
-        runner = METHOD_REGISTRY[method]
-    except KeyError:
-        return f"❌ Method '{method}' not implemented."
-
+    runner = METHOD_REGISTRY.get(method)
+    if runner is None:
+        return f"Method '{method}' not implemented."
+    
     try:
         log = runner(cfg)
     except Exception as e:
-        log = f"❌ Training failed:\n{e}"
+        log = f"Training failed:\n{e}"
 
     return log
 
 
 # ---------------- Gradio layout ----------------------------
-with gr.Blocks(title="Un-learning Trainer") as demo:
-    gr.Markdown("# 🧨 LLM Un-learning Playground")
+with gr.Blocks(title="Minimal LLM Un-learning Trainer") as demo:
+    gr.Markdown("Minimal LLM Un-learning tool")
 
     gpu_ids_in = gr.Textbox(
         label = "GPU id(s) for CUDA_VISIBLE_DEVICES",
         value = "0",
-        placeholder = 'e.g. 0 or 0,1,2,3'
+        placeholder = 'e.g. 0 or 0,1,2,3 or leave empty to use all the devices.'
     )
     method_dd = gr.Dropdown(
         choices=list(METHOD_REGISTRY.keys()),
@@ -129,10 +137,9 @@ with gr.Blocks(title="Un-learning Trainer") as demo:
         epochs_in    = gr.Number(label="Epochs", value=4, precision=0)
         wd_in        = gr.Number(label="Weight decay", value=0.01)
 
-    gr.Markdown("### 📁 Upload datasets (only what your method needs)")
-    forget_up   = gr.File(label="Forget CSV",   file_types=[".csv"])
-    remember_up = gr.File(label="Remember CSV", file_types=[".csv"])
-    dev_up      = gr.File(label="Dev / Eval CSV", file_types=[".csv"])
+    gr.Markdown("Upload datasets (only what your method needs)")
+    forget_up   = gr.File(label="Forget File",   file_types=[".csv"])
+    retain_up = gr.File(label="Retain File", file_types=[".csv"])
 
     run_btn  = gr.Button("🚀 Train")
     console  = gr.Textbox(label="Console log", lines=18, interactive=False)
@@ -144,7 +151,7 @@ with gr.Blocks(title="Un-learning Trainer") as demo:
             access_token_in, model_id_in,
             lora_r_in, lora_alpha_in, lora_dropout_in,
             lr_in, batch_in, grad_in, epochs_in, wd_in,
-            forget_up, remember_up, dev_up,
+            forget_up, retain_up,
             gpu_ids_in,
         ],
         outputs=console,

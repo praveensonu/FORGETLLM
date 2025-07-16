@@ -1,8 +1,4 @@
 from transformers import Trainer
-import torch.nn as nn
-from accelerate import Accelerator
-
-accelerator = Accelerator()
 
 class GATrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch = None):

@@ -1,8 +1,8 @@
 import os 
-from config import Config
+from helpers.config import Config
 
-# ---------- the callable wrapper -------------------------
-def run_gradient_ascent(cfg: Config) -> str:
+
+def run_grad_diff(cfg: Config) -> str:
 
     # -------- GPU selection ---------------------------------
     if cfg.gpu_ids:                       # "" means “use all GPUs”
@@ -14,11 +14,10 @@ def run_gradient_ascent(cfg: Config) -> str:
     from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
     from accelerate import Accelerator
     from peft import LoraConfig, get_peft_model
-    from data_module import SingleDataset
-    from collators import custom_data_collator_forget
-    from utils import find_all_linear_names
-    from trainer import GATrainer
-    from template import LLAMA3_CHAT_TEMPLATE
+    from .data_module import DualDatasetRandom
+    from .collators import custom_gd_collator_forget
+    from .trainer import GradDiffTrainer
+    from helpers.template import LLAMA3_CHAT_TEMPLATE
 
     accelerator = Accelerator()
     if cfg.forget_path is None:
@@ -26,6 +25,7 @@ def run_gradient_ascent(cfg: Config) -> str:
 
     print("Loading Forget CSV:", cfg.forget_path)
     forget = pd.read_csv(cfg.forget_path)
+    retain = pd.read_csv(cfg.retain_path)
 
     # ---- Model & tokenizer --------------------------------
     print(f"\nLoading tokenizer {cfg.model_id}")
@@ -44,7 +44,7 @@ def run_gradient_ascent(cfg: Config) -> str:
         r              = cfg.LoRA_r,
         lora_alpha     = cfg.LoRA_alpha,
         lora_dropout   = cfg.LoRA_dropout,
-        target_modules = find_all_linear_names(model),
+        target_modules = cfg.LoRa_targets,
         bias           = "none",
         task_type      = "CAUSAL_LM",
         modules_to_save=[]          # ← fixes the NoneType bug
@@ -80,18 +80,19 @@ def run_gradient_ascent(cfg: Config) -> str:
         gradient_accumulation_steps  = cfg.gradient_accumulation_steps,
     )
 
-    dataset = SingleDataset(
+    dataset = DualDatasetRandom(
         forget_data = forget,
+        retain_data = retain,
         tokenizer   = tokenizer,
-        max_length  = 256,
+        max_length  = cfg.max_length,
     )
 
-    trainer = GATrainer(
+    trainer = GradDiffTrainer(
         model         = model,
         args          = training_args,
         train_dataset = dataset,
         tokenizer     = tokenizer,
-        data_collator = custom_data_collator_forget,
+        data_collator = custom_gd_collator_forget,
     )
     trainer.train()
     accelerator.wait_for_everyone()
@@ -106,4 +107,4 @@ def run_gradient_ascent(cfg: Config) -> str:
 if __name__ == "__main__":
     cfg = Config()
     cfg.forget_path = "./data/dpo_forget_idk.csv"   # fallback for CLI runs
-    print(run_gradient_ascent(cfg))
+    print(run_grad_diff(cfg))

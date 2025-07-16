@@ -62,8 +62,7 @@ def run_grad_diff(cfg: Config) -> str:
         return df
 
     forget = to_chat(forget)
-    print("First formatted sample ⬇")
-    print(forget["question"][0], forget["answer"][0])
+    retain = to_chat(retain)
 
     # ---- Trainer stuff ------------------------------------
     training_args = TrainingArguments(

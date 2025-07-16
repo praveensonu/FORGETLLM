@@ -11,6 +11,10 @@ class Config:
     # ────────── model backbone ──────────
     model_id: str = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 
+    beta : float = 0.1
+    gamma : float = 1.0
+    alpha : float = 1.0
+
     # ────────── LoRA hyper-params ──────────
     LoRA_r: int = 8
     LoRA_alpha: int = 16

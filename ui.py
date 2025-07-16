@@ -4,13 +4,18 @@ from gradio.components import File as GradioFile
 from helpers.config import Config
 from gradient_ascent.grad_ascent import run_gradient_ascent
 from gradient_diff.grad_diff import run_grad_diff
+from dpo.dpo_run import run_dpo
+from npo.npo_run import run_npo
 
 
 # Map dropdown label ➜ callable
 METHOD_REGISTRY = {
     "gradient_ascent": run_gradient_ascent,
     "gradient_diff": run_grad_diff,
-
+    "dpo": run_dpo,
+    "dpo_retain": run_dpo,
+    "npo" : run_npo,
+    "npo_retain" : run_npo
 }
 
 def tmp_copy(upload: "GradioFile | str | bytes | None") -> str | None:
@@ -53,6 +58,9 @@ def train_interface(method,
                     grad_acc_steps, 
                     num_epochs, 
                     weight_decay,
+                    beta,
+                    gamma,
+                    alpha,
                     forget_csv, 
                     retain_csv, 
                     gpu_ids):
@@ -71,6 +79,9 @@ def train_interface(method,
     cfg.gradient_accumulation_steps= int(grad_acc_steps)
     cfg.num_epochs                 = int(num_epochs)
     cfg.weight_decay               = float(weight_decay)
+    cfg.beta                       = float(beta)
+    cfg.gamma                      = float(gamma)
+    cfg.alpha                      = float(alpha)
     cfg.gpu_ids                    = gpu_ids.strip()
 
     if cfg.gpu_ids:
@@ -86,7 +97,7 @@ def train_interface(method,
     if cfg.forget_path is None:
         return "Please upload a Forget CSV first!"
     
-    if method in ('gradient_diff') and cfg.retain_path is None:
+    if method in ('gradient_diff', 'dpo_retain', 'npo_retain') and cfg.retain_path is None:
         return "This method requires a Retain file, please upload it."
     
     # ---- dispatch to the chosen method ---------------------
@@ -132,10 +143,16 @@ with gr.Blocks(title="Minimal LLM Un-learning Trainer") as demo:
 
     with gr.Row():
         lr_in        = gr.Number(label="Learning rate", value=2e-5)
-        batch_in     = gr.Number(label="Batch size", value=4, precision=0)
+        batch_in     = gr.Number(label="Per Device Batch-size", value=4, precision=0)
         grad_in      = gr.Number(label="Grad-acc steps", value=1, precision=0)
         epochs_in    = gr.Number(label="Epochs", value=4, precision=0)
         wd_in        = gr.Number(label="Weight decay", value=0.01)
+
+    with gr.Row():
+        beta_in = gr.Number(label="Beta - DPO & NPO only",value=0.1, precision=3)
+        gamma_in = gr.Number(label="Gamma - DPO & NPO only",value=1.0, precision=3)
+        alpha_in = gr.Number(label="Alpha - DPO &NPO only",value=1.0, precision=3)
+ 
 
     gr.Markdown("Upload datasets (only what your method needs)")
     forget_up   = gr.File(label="Forget File",   file_types=[".csv"])
@@ -150,7 +167,8 @@ with gr.Blocks(title="Minimal LLM Un-learning Trainer") as demo:
             method_dd,
             access_token_in, model_id_in,
             lora_r_in, lora_alpha_in, lora_dropout_in,
-            lr_in, batch_in, grad_in, epochs_in, wd_in,
+            lr_in, batch_in, grad_in, epochs_in, wd_in, beta_in,
+            gamma_in, alpha_in,
             forget_up, retain_up,
             gpu_ids_in,
         ],
